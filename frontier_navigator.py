@@ -27,7 +27,7 @@ class FrontierNavigator(Node):
         self.declare_parameter("free_threshold", 50)
         self.declare_parameter("max_goal_distance", 5.0)
         self.declare_parameter("goal_tolerance", 0.3)
-        self.declare_parameter("failed_goal_cooldown", 20.0)
+        self.declare_parameter("failed_goal_cooldown", 10.0)
         self.map_msg = None
         self.goal = None
         self.goal_handle = None
