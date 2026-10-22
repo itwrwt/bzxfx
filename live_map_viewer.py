@@ -3,6 +3,7 @@
 """Display the live Cartographer OccupancyGrid without saving snapshots."""
 from __future__ import annotations
 
+import base64
 import math
 import time
 import tkinter as tk
@@ -15,9 +16,9 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from tf2_ros import Buffer, TransformListener
 
 try:
-    from PIL import Image, ImageTk
+    from PIL import Image
 except ImportError:
-    Image = ImageTk = None
+    Image = None
 
 
 class MapSubscriber(Node):
@@ -29,8 +30,8 @@ class MapSubscriber(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self)
         qos = QoSProfile(
             depth=1,
-            reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
         )
         self.create_subscription(OccupancyGrid, "/map", self.on_map, qos)
 
@@ -60,10 +61,14 @@ class LiveMapWindow:
         self.last_rendered = None
         self.last_render_time = 0.0
         self.photo = None
+        self.map_scale = 1.0
         self.root.title("实时 SLAM 地图")
         self.root.geometry("1000x760")
         self.root.minsize(600, 450)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
+        self.root.lift()
+        self.root.attributes("-topmost", True)
+        self.root.after(1200, lambda: self.root.attributes("-topmost", False))
         self.status = tk.StringVar(value="等待 Cartographer 发布 /map…")
         ttk.Label(root, textvariable=self.status, anchor="w").pack(fill="x", padx=8, pady=6)
         host = ttk.Frame(root)
@@ -92,9 +97,11 @@ class LiveMapWindow:
     def refresh(self):
         msg = self.node.latest_map
         if msg is None:
-            age = time.monotonic() - self.node.received_at if self.node.received_at else None
-            if age is None:
-                self.status.set("等待 /map；请先启动激光建图")
+            publishers = self.node.count_publishers("/map")
+            self.status.set(
+                "等待 /map 数据 | 当前发布者: %d | 请确认建图节点和 ROS_DOMAIN_ID"
+                % publishers
+            )
             self.root.after(250, self.refresh)
             return
         now = time.monotonic()
@@ -117,7 +124,7 @@ class LiveMapWindow:
         if width <= 0 or height <= 0 or len(msg.data) != width * height:
             self.status.set("收到无效地图栅格")
             return
-        if Image is None or ImageTk is None:
+        if Image is None:
             self.status.set("缺少 Pillow，无法渲染实时地图")
             return
         pixels = bytes(
@@ -126,10 +133,15 @@ class LiveMapWindow:
         )
         image = Image.frombytes("L", (width, height), pixels)
         image = image.transpose(Image.FLIP_TOP_BOTTOM).convert("RGB")
-        self.photo = ImageTk.PhotoImage(image)
+        image.thumbnail((1800, 1400), Image.NEAREST)
+        self.map_scale = image.width / float(width)
+        ppm = b"P6\n%d %d\n255\n" % image.size + image.tobytes()
+        self.photo = tk.PhotoImage(
+            data=base64.b64encode(ppm).decode("ascii"), format="PPM"
+        )
         self.canvas.delete("all")
         self.canvas.create_image(0, 0, image=self.photo, anchor="nw")
-        self.canvas.configure(scrollregion=(0, 0, width, height))
+        self.canvas.configure(scrollregion=(0, 0, image.width, image.height))
         self.draw_robot(msg, width, height)
 
     def draw_robot(self, msg, width, height):
@@ -148,7 +160,8 @@ class LiveMapWindow:
         local_y = -math.sin(origin_yaw) * dx + math.cos(origin_yaw) * dy
         col = local_x / msg.info.resolution
         row = local_y / msg.info.resolution
-        cx, cy = col + 0.5, height - row - 0.5
+        cx = (col + 0.5) * self.map_scale
+        cy = (height - row - 0.5) * self.map_scale
         heading = yaw - origin_yaw
         length = 7.0
         tip = (cx + length * math.cos(heading), cy - length * math.sin(heading))

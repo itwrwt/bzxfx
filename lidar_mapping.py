@@ -526,6 +526,9 @@ def _viewer_is_running(pid: int) -> bool:
 
 
 def open_live_map() -> int:
+    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        print("无法打开实时地图窗口：当前 UI 进程没有图形显示环境。", file=sys.stderr)
+        return 1
     try:
         pid = int(VIEWER_PID_FILE.read_text(encoding="ascii").strip())
     except (OSError, ValueError):
@@ -533,7 +536,8 @@ def open_live_map() -> int:
     if pid and _viewer_is_running(pid):
         print("实时地图窗口已经打开。")
         return 0
-    log = open(LOG_FILE, "a", encoding="utf-8", buffering=1)
+    viewer_log = STATE_DIR / "live_map_viewer.log"
+    log = open(viewer_log, "a", encoding="utf-8", buffering=1)
     try:
         process = subprocess.Popen(
             _env_command(f"python3 {SCRIPT_DIR / 'live_map_viewer.py'}"),

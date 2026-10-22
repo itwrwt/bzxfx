@@ -419,11 +419,10 @@ class UnmannedVehicleUI:
     def start_mapping(self, mode="manual"):
         self.mapping_status.config(text="建图启动中…")
         self._log("正在请求启动%s建图" % ("自动" if mode == "auto" else "手动"))
+        self._run_mapping_command_async("view", self._live_view_command_finished)
         self._run_mapping_command_async(
             mode,
-            lambda result, error: self._mapping_command_finished(
-                result, error, open_live=(mode == "auto")
-            ),
+            self._mapping_command_finished,
         )
 
     def stop_mapping(self):
@@ -431,7 +430,7 @@ class UnmannedVehicleUI:
         self._log("正在强制停止建图（不保存地图）")
         self._run_mapping_command_async("force-stop", self._mapping_command_finished)
 
-    def _mapping_command_finished(self, result, error, open_live=False):
+    def _mapping_command_finished(self, result, error):
         if error:
             message = "建图操作失败: %s" % error
         else:
@@ -443,8 +442,6 @@ class UnmannedVehicleUI:
         self.mapping_status.config(text=message[-120:])
         self.status = message
         self._log(message)
-        if open_live and not error and result is not None and result.returncode == 0:
-            self._run_mapping_command_async("view", self._live_view_command_finished)
 
     def open_live_map(self):
         self._run_mapping_command_async("view", self._live_view_command_finished)
