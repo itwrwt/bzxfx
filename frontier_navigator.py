@@ -27,6 +27,7 @@ class FrontierNavigator(Node):
         self.declare_parameter("free_threshold", 50)
         self.declare_parameter("max_goal_distance", 5.0)
         self.declare_parameter("goal_tolerance", 0.3)
+        self.declare_parameter("failed_goal_cooldown", 20.0)
         self.map_msg = None
         self.goal = None
         self.goal_handle = None
@@ -137,7 +138,12 @@ class FrontierNavigator(Node):
                 self.get_parameter("max_goal_distance").value
             ):
                 continue
-            if any(math.hypot(x - gx, y - gy) < 0.45 for gx, gy in self.failed_goals):
+            cooldown = float(self.get_parameter("failed_goal_cooldown").value)
+            if any(
+                time.monotonic() - failed_at < cooldown
+                and math.hypot(x - gx, y - gy) < 0.45
+                for gx, gy, failed_at in self.failed_goals
+            ):
                 continue
             clusters.append((len(cluster) / (distance + 0.5), x, y))
         return clusters
@@ -171,7 +177,7 @@ class FrontierNavigator(Node):
             self.get_logger().error("Nav2 目标发送失败: %s" % exc)
             return
         if not self.goal_handle.accepted:
-            self.failed_goals.append(self.goal)
+            self.failed_goals.append((*self.goal, time.monotonic()))
             self.failed_goals = self.failed_goals[-20:]
             self.goal_pending = False
             self.get_logger().warning("Nav2 拒绝前沿目标")
@@ -186,7 +192,7 @@ class FrontierNavigator(Node):
             status = -1
             self.get_logger().warning("Nav2 导航结果异常: %s" % exc)
         if status != GoalStatus.STATUS_SUCCEEDED and self.goal is not None:
-            self.failed_goals.append(self.goal)
+            self.failed_goals.append((*self.goal, time.monotonic()))
             self.failed_goals = self.failed_goals[-20:]
         self.get_logger().info("Nav2 前沿目标结束，状态=%s" % status)
         self.goal = None
