@@ -269,6 +269,10 @@ class UnmannedVehicleUI:
             mapping_files_row, text="打开地图", command=self.open_saved_map
         )
         self.mapping_view_btn.pack(side="left", expand=True, fill="x", padx=1)
+        self.mapping_live_btn = ttk.Button(
+            mapping_files_row, text="实时地图", command=self.open_live_map
+        )
+        self.mapping_live_btn.pack(side="left", expand=True, fill="x", padx=1)
         self.mapping_status = tk.Label(right, text="状态: 未运行", anchor="w",
                                        justify="left", fg="#555",
                                        font=(self.font_family, 9))
@@ -415,14 +419,19 @@ class UnmannedVehicleUI:
     def start_mapping(self, mode="manual"):
         self.mapping_status.config(text="建图启动中…")
         self._log("正在请求启动%s建图" % ("自动" if mode == "auto" else "手动"))
-        self._run_mapping_command_async(mode, self._mapping_command_finished)
+        self._run_mapping_command_async(
+            mode,
+            lambda result, error: self._mapping_command_finished(
+                result, error, open_live=(mode == "auto")
+            ),
+        )
 
     def stop_mapping(self):
         self.mapping_status.config(text="正在强制停止…")
         self._log("正在强制停止建图（不保存地图）")
         self._run_mapping_command_async("force-stop", self._mapping_command_finished)
 
-    def _mapping_command_finished(self, result, error):
+    def _mapping_command_finished(self, result, error, open_live=False):
         if error:
             message = "建图操作失败: %s" % error
         else:
@@ -433,6 +442,22 @@ class UnmannedVehicleUI:
                 message = "退出码 %s；%s" % (result.returncode, message)
         self.mapping_status.config(text=message[-120:])
         self.status = message
+        self._log(message)
+        if open_live and not error and result is not None and result.returncode == 0:
+            self._run_mapping_command_async("view", self._live_view_command_finished)
+
+    def open_live_map(self):
+        self._run_mapping_command_async("view", self._live_view_command_finished)
+
+    def _live_view_command_finished(self, result, error):
+        if error:
+            message = "实时地图窗口启动失败: %s" % error
+        else:
+            output = (result.stdout or result.stderr or "实时地图窗口已打开").strip()
+            message = "；".join(line.strip() for line in output.splitlines() if line.strip())
+            if result.returncode:
+                message = "退出码 %s；%s" % (result.returncode, message)
+        self.mapping_status.config(text=message[-120:])
         self._log(message)
 
     def save_mapping(self):
@@ -678,6 +703,10 @@ class UnmannedVehicleUI:
 
     def on_close(self):
         self.running = False
+        try:
+            self._run_mapping_command("close-viewer")
+        except Exception:
+            pass
         try:
             self._run_mapping_command("force-stop")
         except Exception:

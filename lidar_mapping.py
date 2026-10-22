@@ -33,6 +33,7 @@ MODE_FILE = STATE_DIR / "mapping.mode"
 LOG_FILE = STATE_DIR / "mapping.log"
 LOCK_FILE = STATE_DIR / "mapping.lock"
 MAP_DIR = Path(os.environ.get("CAR_MAP_DIR", str(Path.home() / "car" / "maps")))
+VIEWER_PID_FILE = STATE_DIR / "live_map_viewer.pid"
 ROS_SETUP = os.environ.get("CAR_ROS_SETUP", "/opt/ros/humble/setup.bash")
 LIDAR_SETUP = os.environ.get("CAR_LIDAR_SETUP", "/home/haha3/ydlidar_ws/install/setup.bash")
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -514,9 +515,57 @@ def list_maps() -> int:
     return 0
 
 
+def _viewer_is_running(pid: int) -> bool:
+    if not _alive(pid):
+        return False
+    try:
+        command = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ")
+        return b"live_map_viewer.py" in command
+    except OSError:
+        return False
+
+
+def open_live_map() -> int:
+    try:
+        pid = int(VIEWER_PID_FILE.read_text(encoding="ascii").strip())
+    except (OSError, ValueError):
+        pid = 0
+    if pid and _viewer_is_running(pid):
+        print("实时地图窗口已经打开。")
+        return 0
+    log = open(LOG_FILE, "a", encoding="utf-8", buffering=1)
+    try:
+        process = subprocess.Popen(
+            _env_command(f"python3 {SCRIPT_DIR / 'live_map_viewer.py'}"),
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    finally:
+        log.close()
+    VIEWER_PID_FILE.write_text(str(process.pid) + "\n", encoding="ascii")
+    print("实时地图窗口已启动，正在订阅 /map。")
+    return 0
+
+
+def close_live_map() -> int:
+    try:
+        pid = int(VIEWER_PID_FILE.read_text(encoding="ascii").strip())
+    except (OSError, ValueError):
+        pid = 0
+    if pid and _viewer_is_running(pid):
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        except OSError:
+            pass
+    VIEWER_PID_FILE.unlink(missing_ok=True)
+    print("实时地图窗口已关闭。")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="树莓派本地 2D 激光 SLAM 建图")
-    parser.add_argument("command", choices=("start", "manual", "auto", "save", "stop", "force-stop", "status", "list"))
+    parser.add_argument("command", choices=("start", "manual", "auto", "save", "stop", "force-stop", "status", "list", "view", "close-viewer"))
     parser.add_argument("name", nargs="?", default="room_map")
     args = parser.parse_args()
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -532,6 +581,10 @@ def main() -> int:
             return force_stop()
         if args.command == "list":
             return list_maps()
+        if args.command == "view":
+            return open_live_map()
+        if args.command == "close-viewer":
+            return close_live_map()
         return status()
 
 
