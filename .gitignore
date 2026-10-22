@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.log
+.env
+.env.*
+!.env.example
+*.pgm
+*.map
+maps/
+.backup*/
+.rollback*/
+.deploy*/
+rollback_*/
+deploy_*/
+.mecanum_new/

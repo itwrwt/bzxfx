@@ -1,0 +1,9 @@
+pyserial
+opencv-python
+matplotlib
+openai
+zhipuAi
+depthai
+torch
+requests
+dashscope
