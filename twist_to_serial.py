@@ -36,13 +36,13 @@ class TwistSerial(Node):
         self.declare_parameter("deadband", 0.03)
         self.declare_parameter("turn_command_threshold", 0.20)
         self.declare_parameter("motion_switch_brake_sec", 0.08)
-        self.declare_parameter("command_timeout", 0.6)
+        self.declare_parameter("command_timeout", 3.0)
         self.declare_parameter("linear_speed_mps", float(os.environ.get("CAR_LINEAR_SPEED_MPS", "0.08")))
         self.declare_parameter("rotate_deg_per_sec", float(os.environ.get("CAR_ROT_DEG_PER_SEC", "44.0")))
         self.declare_parameter("min_turn_radius", 0.32)
         self.declare_parameter("allow_backward", False)
         self.declare_parameter("scan_topic", "/scan")
-        self.declare_parameter("scan_timeout", 0.35)
+        self.declare_parameter("scan_timeout", 3.0)
         # Laser-origin clearance: body extents are front 0.30 m, rear 0.25 m,
         # sides 0.20 m, with a 0.05 m safety margin.
         self.declare_parameter("front_stop_distance", 0.35)
